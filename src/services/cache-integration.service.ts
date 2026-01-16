@@ -1,114 +1,59 @@
-import { Injectable } from '@nestjs/common';
-import { SearchResult } from '../models/response';
+import { DelayedBatchWriteManager } from '../util/cache/delayed_batch_write_manager';
+import { EnhancedTwoLevelCache } from '../util/cache/enhanced_two_level_cache';
+import { CacheWriteStrategy, CacheOperation } from '../util/cache/delayed_batch_write_manager';
+import { SearchResult } from '../models/plugin-result';
+import { GetPluginByName } from '../plugins/plugin.manager';
 
-// 定义缓存策略接口
-export enum CacheWriteStrategy {
-  IMMEDIATE = 'IMMEDIATE',
-  BATCH = 'BATCH',
-  DELAYED = 'DELAYED',
-}
-
-// 定义缓存操作接口
-export interface CacheOperation {
-  key: string;
-  data: SearchResult[];
-  ttl: number;
-  pluginName: string;
-  keyword: string;
-  timestamp: Date;
-  priority: number;
-  dataSize: number;
-  isFinal: boolean;
-}
-
-// 延迟批量写入管理器接口
-export interface DelayedBatchWriteManager {
-  setMainCacheUpdater(updater: (key: string, data: Buffer, ttl: number) => Promise<void>): void;
-  initialize(): Promise<void>;
-  handleCacheOperation(operation: CacheOperation): Promise<void>;
-  shutdown(timeout: number): Promise<void>;
-  getStats(): any;
-}
-
-// 增强版两级缓存接口
-export interface EnhancedTwoLevelCache {
-  setBothLevels(key: string, data: Buffer, ttl: number): Promise<void>;
-  setMemoryOnly(key: string, data: Buffer, ttl: number): Promise<void>;
-  getSerializer(): any;
-}
-
-@Injectable()
+// CacheWriteIntegration 缓存写入集成层
 export class CacheWriteIntegration {
   private batchManager: DelayedBatchWriteManager;
   private mainCache: EnhancedTwoLevelCache;
   private strategy: CacheWriteStrategy;
-  private initialized: boolean;
+  private initialized: boolean = false;
 
-  constructor(mainCache: EnhancedTwoLevelCache) {
-    this.mainCache = mainCache;
-    this.initialized = false;
-    
-    // 初始化延迟批量写入管理器
-    this.initBatchManager();
-  }
-
-  private async initBatchManager(): Promise<void> {
+  // NewCacheWriteIntegration 创建缓存写入集成
+  public static async NewCacheWriteIntegration(mainCache: EnhancedTwoLevelCache): Promise<[CacheWriteIntegration, Error | null]> {
     try {
-      // TODO: 实现DelayedBatchWriteManager
-      // 目前先使用模拟实现
-      this.batchManager = {
-        setMainCacheUpdater: (updater: (key: string, data: Buffer, ttl: number) => Promise<void>) => {
-          // 存储更新器
-        },
-        initialize: async () => {
-          return Promise.resolve();
-        },
-        handleCacheOperation: async (operation: CacheOperation) => {
-          // 模拟处理缓存操作
-          return Promise.resolve();
-        },
-        shutdown: async (timeout: number) => {
-          return Promise.resolve();
-        },
-        getStats: () => {
-          return {};
-        },
-      };
+      // 创建延迟批量写入管理器
+      const [batchManager, err] = await DelayedBatchWriteManager.NewDelayedBatchWriteManager();
+      if (err) {
+        return [null, new Error(`创建批量写入管理器失败: ${err.message}`)];
+      }
+      
+      const integration = new CacheWriteIntegration();
+      integration.batchManager = batchManager;
+      integration.mainCache = mainCache;
       
       // 设置主缓存更新函数
-      this.batchManager.setMainCacheUpdater(this.createMainCacheUpdater());
+      batchManager.SetMainCacheUpdater(integration.createMainCacheUpdater());
       
       // 初始化管理器
-      await this.batchManager.initialize();
+      const initErr = await batchManager.Initialize();
+      if (initErr) {
+        return [null, new Error(`初始化批量写入管理器失败: ${initErr.message}`)];
+      }
       
-      this.initialized = true;
+      integration.initialized = true;
       
       console.log('[缓存写入集成] 初始化完成');
+      return [integration, null];
     } catch (error) {
-      console.error('[缓存写入集成] 初始化失败:', error);
-      throw error;
+      return [null, error as Error];
     }
   }
 
-  // 创建主缓存更新函数
-  private createMainCacheUpdater(): (key: string, data: Buffer, ttl: number) => Promise<void> {
-    return async (key: string, data: Buffer, ttl: number) => {
+  // createMainCacheUpdater 创建主缓存更新函数
+  private createMainCacheUpdater(): (key: string, data: Buffer, ttl: number) => Promise<Error | null> {
+    return async (key: string, data: Buffer, ttl: number): Promise<Error | null> => {
       // 调用现有的缓存系统进行实际写入
-      await this.mainCache.setBothLevels(key, data, ttl);
+      return await this.mainCache.SetBothLevels(key, data, ttl);
     };
   }
 
-  // 处理缓存写入请求
-  async handleCacheWrite(
-    key: string,
-    results: SearchResult[],
-    ttl: number,
-    isFinal: boolean,
-    keyword: string,
-    pluginName: string
-  ): Promise<void> {
+  // HandleCacheWrite 处理缓存写入请求
+  public async HandleCacheWrite(key: string, results: SearchResult[], ttl: number, isFinal: boolean, keyword: string, pluginName: string): Promise<Error | null> {
     if (!this.initialized) {
-      throw new Error('缓存写入集成未初始化');
+      return new Error('缓存写入集成未初始化');
     }
     
     // 计算插件优先级
@@ -119,59 +64,64 @@ export class CacheWriteIntegration {
     
     // 创建缓存操作
     const operation: CacheOperation = {
-      key,
-      data: results,
-      ttl,
-      pluginName,
-      keyword,
-      timestamp: new Date(),
-      priority,
-      dataSize,
-      isFinal,
+      Key: key,
+      Data: results,
+      TTL: ttl,
+      PluginName: pluginName,
+      Keyword: keyword,
+      Timestamp: new Date(),
+      Priority: priority,
+      DataSize: dataSize,
+      IsFinal: isFinal,
     };
     
     // 调用批量写入管理器处理
-    await this.batchManager.handleCacheOperation(operation);
+    return await this.batchManager.HandleCacheOperation(operation);
   }
 
-  // 获取插件优先级
+  // getPluginPriority 获取插件优先级
   private getPluginPriority(pluginName: string): number {
-    // TODO: 从插件管理器动态获取真实的优先级
-    // 目前返回默认值
-    return 3;
+    // 从插件管理器动态获取真实的优先级
+    const [pluginInstance, exists] = GetPluginByName(pluginName);
+    if (exists) {
+      return pluginInstance.Priority();
+    }
+    
+    // 如果插件不存在，返回默认等级4（最低优先级）
+    return 4;
   }
 
-  // 估算数据大小
+  // estimateDataSize 估算数据大小
   private estimateDataSize(results: SearchResult[]): number {
     // 简化估算：每个结果约500字节
     return results.length * 500;
   }
 
-  // 优雅关闭
-  async shutdown(timeout: number): Promise<void> {
-    if (!this.initialized) {
-      return;
-    }
-    
-    await this.batchManager.shutdown(timeout);
-  }
-
-  // 获取统计信息
-  getStats(): any {
+  // Shutdown 优雅关闭
+  public async Shutdown(timeout: number): Promise<Error | null> {
     if (!this.initialized) {
       return null;
     }
     
-    return this.batchManager.getStats();
+    return await this.batchManager.Shutdown(timeout);
   }
 
-  // 设置写入策略
-  setStrategy(strategy: CacheWriteStrategy): void {
+  // GetStats 获取统计信息
+  public GetStats(): any {
+    if (!this.initialized) {
+      return null;
+    }
+    
+    return this.batchManager.GetStats();
+  }
+
+  // SetStrategy 设置写入策略
+  public SetStrategy(strategy: CacheWriteStrategy): void {
     this.strategy = strategy;
   }
 
-  // 获取当前策略
-  getStrategy(): CacheWriteStrategy {
+  // GetStrategy 获取当前策略
+  public GetStrategy(): CacheWriteStrategy {
     return this.strategy;
   }
 }
