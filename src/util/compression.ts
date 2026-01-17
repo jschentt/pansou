@@ -8,7 +8,7 @@ import { AppConfig } from '../config/config';
 export function GzipMiddleware() {
   return (req: Request, res: Response, next: NextFunction) => {
     // 如果未启用压缩，直接跳过
-    if (!AppConfig.EnableCompression) {
+    if (!AppConfig.enableCompression) {
       next();
       return;
     }
@@ -47,7 +47,7 @@ export function GzipMiddleware() {
       const responseData = Buffer.concat(chunks);
       
       // 如果响应大小小于最小压缩大小，直接返回原始内容
-      if (responseData.length < AppConfig.MinSizeToCompress) {
+      if (responseData.length < AppConfig.minSizeToCompress) {
         res.setHeader('Content-Length', responseData.length.toString());
         originalWrite.call(res, responseData);
         originalEnd.call(res);

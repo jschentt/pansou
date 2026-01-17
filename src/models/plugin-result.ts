@@ -1,4 +1,7 @@
-import { SearchResult } from './response';
+import { SearchResult, Link, SearchResponse, MergedLinks, MergedLink } from './response';
+
+// 重新导出从response导入的类型
+export { SearchResult, Link, SearchResponse, MergedLinks, MergedLink };
 
 // PluginSearchResult 插件搜索结果
 export class PluginSearchResult {

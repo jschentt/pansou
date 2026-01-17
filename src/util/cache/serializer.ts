@@ -123,5 +123,4 @@ function init() {
 // 执行初始化
 init();
 
-// 导出
-export { Serializer, GobSerializer, JSONSerializer, SerializeWithPool, DeserializeWithPool };
+

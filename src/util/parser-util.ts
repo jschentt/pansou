@@ -273,7 +273,7 @@ export function extractTitle(htmlContent: string, textContent: string): string {
     
     // 创建一个文档来解析这个HTML片段
     const $ = cheerio.load(`<div>${firstLineHTML}</div>`);
-    const firstLine = $.text().trim();
+    const firstLine = $('div').text().trim();
     
     // 如果第一行以"名称："开头，则提取冒号后面的内容作为标题
     if (firstLine.startsWith('名称：')) {

@@ -32,8 +32,8 @@ export function InitHTTPClient(): void {
   // 创建代理配置
   let proxyAgent: https.Agent | http.Agent | undefined;
 
-  if (AppConfig.UseProxy) {
-    const proxyURL = AppConfig.ProxyURL;
+  if (AppConfig.useProxy) {
+    const proxyURL = AppConfig.proxyURL;
     if (proxyURL) {
       try {
         const parsedURL = new URL(proxyURL);
@@ -53,8 +53,8 @@ export function InitHTTPClient(): void {
   }
 
   // 创建HTTPS和HTTP代理
-  httpsAgent = proxyAgent || new https.Agent(agentOptions);
-  httpAgent = proxyAgent || new http.Agent(agentOptions);
+  httpsAgent = new https.Agent(agentOptions);
+  httpAgent = new http.Agent(agentOptions);
 
   // 初始化客户端配置
   httpClientConfig = {

@@ -110,7 +110,7 @@ export class EnhancedTwoLevelCache {
     if (!diskErr && diskHit && diskData) {
       // 磁盘缓存命中，更新内存缓存
       const diskLastModified = await this.disk.GetLastModified(key);
-      const ttl = (AppConfig.CacheTTLMinutes || 30) * 60 * 1000; // 转换为毫秒
+      const ttl = (AppConfig.cacheTTLMinutes || 30) * 60 * 1000; // 转换为毫秒
       this.memory.SetWithTimestamp(key, diskData, ttl, diskLastModified || new Date());
       return [diskData, true, null];
     }
@@ -180,5 +180,4 @@ export class EnhancedTwoLevelCache {
   }
 }
 
-// 导出
-export { EnhancedTwoLevelCache };
+

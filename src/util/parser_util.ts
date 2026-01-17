@@ -1,5 +1,5 @@
 import * as cheerio from 'cheerio';
-import { Link, SearchResult } from '../../models/plugin-result';
+import { Link, SearchResult } from '../models/response';
 import {
   AllPanLinksPattern,
   BaiduPanPattern,
@@ -296,8 +296,8 @@ export function parseSearchResults(html: string, channel: string): { results: Se
               type: linkType,
               url: normalizedHref,  // 使用标准化的URL
               password: password,
-              datetime: new Date(),
-              work_title: ''
+              datetime: new Date().toISOString(),
+              workTitle: ''
             });
           }
         }
@@ -396,8 +396,8 @@ export function parseSearchResults(html: string, channel: string): { results: Se
             type: linkType,
             url: normalizedLinkURL,  // 使用标准化的URL
             password: password,
-            datetime: new Date(),
-            work_title: ''
+            datetime: new Date().toISOString(),
+            workTitle: ''
           });
         }
       }
@@ -416,8 +416,8 @@ export function parseSearchResults(html: string, channel: string): { results: Se
             type: 'baidu',
             url: normalizedURL,
             password: password,
-            datetime: new Date(),
-            work_title: ''
+            datetime: new Date().toISOString(),
+            workTitle: ''
           });
         }
       }
@@ -436,8 +436,8 @@ export function parseSearchResults(html: string, channel: string): { results: Se
             type: 'tianyi',
             url: normalizedURL,
             password: password,
-            datetime: new Date(),
-            work_title: ''
+            datetime: new Date().toISOString(),
+            workTitle: ''
           });
         }
       }
@@ -456,8 +456,8 @@ export function parseSearchResults(html: string, channel: string): { results: Se
             type: 'uc',
             url: normalizedURL,
             password: password,
-            datetime: new Date(),
-            work_title: ''
+            datetime: new Date().toISOString(),
+            workTitle: ''
           });
         }
       }
@@ -476,8 +476,8 @@ export function parseSearchResults(html: string, channel: string): { results: Se
             type: '123',
             url: normalizedURL,
             password: password,
-            datetime: new Date(),
-            work_title: ''
+            datetime: new Date().toISOString(),
+            workTitle: ''
           });
         }
       }
@@ -496,8 +496,8 @@ export function parseSearchResults(html: string, channel: string): { results: Se
             type: '115',
             url: normalizedURL,
             password: password,
-            datetime: new Date(),
-            work_title: ''
+            datetime: new Date().toISOString(),
+            workTitle: ''
           });
         }
       }
@@ -516,8 +516,8 @@ export function parseSearchResults(html: string, channel: string): { results: Se
             type: 'aliyun',
             url: normalizedURL,
             password: password,
-            datetime: new Date(),
-            work_title: ''
+            datetime: new Date().toISOString(),
+            workTitle: ''
           });
         }
       }
@@ -567,10 +567,10 @@ export function parseSearchResults(html: string, channel: string): { results: Se
       const linksWithWorkTitles = extractWorkTitlesForLinks(links, messageText, title);
       
       results.push({
-        message_id: messageID,
-        unique_id: uniqueID,
+        messageId: messageID,
+        uniqueId: uniqueID,
         channel: channel,
-        datetime: datetime,
+        datetime: datetime.toISOString(),
         title: title,
         content: messageText,
         links: linksWithWorkTitles,
@@ -657,7 +657,7 @@ export function extractTitle(htmlContent: string, textContent: string): string {
       // 创建一个文档来解析这个HTML片段
       const $ = cheerio.load('<div>' + firstLineHTML + '</div>');
       // 获取解析后的文本
-      const firstLine = $.text().trim();
+      const firstLine = $('div').text().trim();
       
       // 如果第一行以"名称："开头，则提取冒号后面的内容作为标题
       if (firstLine.startsWith('名称：')) {
@@ -732,7 +732,7 @@ export function extractWorkTitlesForLinks(links: Link[], messageText: string, de
   if (links.length <= 4) {
     return links.map(link => ({
       ...link,
-      work_title: defaultTitle
+      workTitle: defaultTitle
     }));
   }
   
@@ -827,12 +827,12 @@ export function extractWorkTitlesFromSingleLineFormat(links: Link[], lines: stri
     if (urlToWorkTitle[normalizedURL]) {
       return {
         ...link,
-        work_title: urlToWorkTitle[normalizedURL]
+        workTitle: urlToWorkTitle[normalizedURL]
       };
     } else {
       return {
         ...link,
-        work_title: defaultTitle
+        workTitle: defaultTitle
       };
     }
   });
@@ -893,6 +893,6 @@ export function extractWorkTitlesFromContext(links: Link[], messageText: string,
   // 简单实现：如果无法精确匹配，则都使用默认标题
   return links.map(link => ({
     ...link,
-    work_title: defaultTitle
+    workTitle: defaultTitle
   }));
 }

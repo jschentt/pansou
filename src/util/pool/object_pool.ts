@@ -27,15 +27,15 @@ const linkPool = new ObjectPool<Link>(() => ({
   type: '',
   url: '',
   password: '',
-  datetime: new Date(),
-  work_title: '',
+  datetime: '',
+  workTitle: '',
 }));
 
 const searchResultPool = new ObjectPool<SearchResult>(() => ({
-  message_id: '',
-  unique_id: '',
+  messageId: '',
+  uniqueId: '',
   channel: '',
-  datetime: new Date(),
+  datetime: '',
   title: '',
   content: '',
   links: [],
@@ -47,7 +47,7 @@ const mergedLinkPool = new ObjectPool<MergedLink>(() => ({
   url: '',
   password: '',
   note: '',
-  datetime: new Date(),
+  datetime: '',
   source: '',
   images: [],
 }));
@@ -62,7 +62,8 @@ export function releaseLink(l: Link): void {
   l.type = '';
   l.url = '';
   l.password = '';
-  l.work_title = '';
+  l.workTitle = '';
+  l.datetime = '';
   linkPool.put(l);
 }
 
@@ -73,15 +74,15 @@ export function getSearchResult(): SearchResult {
 
 // 释放SearchResult对象回对象池
 export function releaseSearchResult(sr: SearchResult): void {
-  sr.message_id = '';
-  sr.unique_id = '';
+  sr.messageId = '';
+  sr.uniqueId = '';
   sr.channel = '';
   sr.title = '';
   sr.content = '';
   sr.links = [];
   sr.tags = [];
   sr.images = [];
-  // 不重置时间，因为会被重新赋值
+  sr.datetime = '';
   searchResultPool.put(sr);
 }
 

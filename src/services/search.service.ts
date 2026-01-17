@@ -57,7 +57,7 @@ function extractKeywordFromCacheKey(cacheKey: string): string {
 // logAsyncCacheWithKeyword 异步缓存日志输出辅助函数（带关键词）
 function logAsyncCacheWithKeyword(keyword: string, cacheKey: string, format: string, ...args: any[]): void {
   // 检查配置开关
-  if (!AppConfig || !AppConfig.AsyncLogEnabled) {
+  if (!AppConfig || !AppConfig.asyncLogEnabled) {
     return;
   }
   
@@ -80,7 +80,7 @@ function logAsyncCacheWithKeyword(keyword: string, cacheKey: string, format: str
 
 // 初始化缓存
 function initCache(): void {
-  if (AppConfig && AppConfig.CacheEnabled) {
+  if (AppConfig && AppConfig.cacheEnabled) {
     try {
       // 这里需要根据实际的缓存初始化逻辑进行调整
       // 暂时设置为null，后续会在NewSearchService中初始化
@@ -135,7 +135,7 @@ export function mergeSearchResults(existing: SearchResult[], newResults: SearchR
   
   // 按时间排序（最新的在前）
   merged.sort((a, b) => {
-    return b.Datetime.getTime() - a.Datetime.getTime();
+    return new Date(b.datetime).getTime() - new Date(a.datetime).getTime();
   });
   
   return merged;
@@ -143,14 +143,14 @@ export function mergeSearchResults(existing: SearchResult[], newResults: SearchR
 
 // generateResultKey 生成结果的唯一标识键
 function generateResultKey(result: SearchResult): string {
-  // 使用UniqueID作为主要标识，如果没有则使用MessageID，最后使用标题
-  if (result.UniqueID) {
-    return result.UniqueID;
+  // 使用uniqueId作为主要标识，如果没有则使用messageId，最后使用标题
+  if (result.uniqueId) {
+    return result.uniqueId;
   }
-  if (result.MessageID) {
-    return result.MessageID;
+  if (result.messageId) {
+    return result.messageId;
   }
-  return `title_${result.Title}_${result.Channel}`;
+  return `title_${result.title}_${result.channel}`;
 }
 
 // selectBetterResult 选择信息更完整的结果
@@ -170,32 +170,32 @@ function calculateCompletenessScore(result: SearchResult): number {
   let score: number = 0;
   
   // 有UniqueID加分
-  if (result.UniqueID) {
+  if (result.uniqueId) {
     score += 10;
   }
   
   // 有链接信息加分
-  if (result.Links && result.Links.length > 0) {
+  if (result.links && result.links.length > 0) {
     score += 5;
     // 每个链接额外加分
-    score += result.Links.length;
+    score += result.links.length;
   }
   
   // 有内容加分
-  if (result.Content) {
+  if (result.content) {
     score += 3;
   }
   
   // 标题长度加分（更详细的标题）
-  score += Math.floor(result.Title.length / 10);
+  score += Math.floor(result.title.length / 10);
   
   // 有频道信息加分
-  if (result.Channel) {
+  if (result.channel) {
     score += 2;
   }
   
   // 有标签加分
-  score += result.Tags ? result.Tags.length : 0;
+  score += result.tags ? result.tags.length : 0;
   
   return score;
 }
@@ -207,7 +207,7 @@ export class SearchService {
   // NewSearchService 创建搜索服务实例并确保缓存可用
   static NewSearchService(pluginManager: PluginManager): SearchService {
     // 检查缓存是否已初始化，如果未初始化则尝试重新初始化
-    if (!cacheInitialized && AppConfig && AppConfig.CacheEnabled) {
+    if (!cacheInitialized && AppConfig && AppConfig.cacheEnabled) {
       try {
         // 这里需要根据实际的缓存初始化逻辑进行调整
         cacheInitialized = true;
@@ -260,10 +260,10 @@ export class SearchService {
         const [existingData, hit, err] = await mainCache.Get(key);
         if (!err && hit) {
           try {
-            const existingResults: SearchResult[] = await mainCache.GetSerializer().Deserialize(existingData!);
+            const existingResults: SearchResult[] = await mainCache.GetSerializer().Deserialize(existingData!, []);
             // 合并新旧结果，去重保留最完整的数据
             finalResults = mergeSearchResults(existingResults, newResults);
-            if (AppConfig && AppConfig.AsyncLogEnabled) {
+            if (AppConfig && AppConfig.asyncLogEnabled) {
               if (keyword) {
                 console.log(`🔄 [${pluginName}:${keyword}] 更新缓存| 原有: ${existingResults.length} + 新增: ${newResults.length} = 合并后: ${finalResults.length}`);
               }
@@ -271,7 +271,7 @@ export class SearchService {
           } catch (err) {
             // 反序列化失败，使用新结果
             finalResults = newResults;
-            if (AppConfig && AppConfig.AsyncLogEnabled) {
+            if (AppConfig && AppConfig.asyncLogEnabled) {
               const displayKey = key.substring(0, 8) + '...';
               if (keyword) {
                 console.log(`[异步插件 ${pluginName}] 缓存反序列化失败，使用新结果: ${displayKey}(关键词:${keyword}) | 结果数: ${newResults.length}`);
@@ -343,7 +343,7 @@ export class SearchService {
     };
     
     // 获取所有插件
-    const plugins = pluginManager.GetPlugins();
+    const plugins = pluginManager.getPlugins();
     
     // 遍历所有插件，找出异步插件
     for (const p of plugins) {
@@ -411,7 +411,7 @@ export class SearchService {
           plugins = null;
         } else {
           // 检查是否包含所有插件
-          const allPlugins = this.pluginManager.GetPlugins();
+          const allPlugins = this.pluginManager.getPlugins();
           const allPluginNames: string[] = [];
           for (const p of allPlugins) {
             allPluginNames.push(p.Name().toLowerCase());
@@ -453,7 +453,7 @@ export class SearchService {
     
     // 如果未指定并发数，使用配置中的默认值
     if (concurrency <= 0) {
-      concurrency = AppConfig.DefaultConcurrency;
+      concurrency = AppConfig.defaultConcurrency;
     }
 
     // 并行获取TG搜索和插件搜索结果
@@ -477,7 +477,7 @@ export class SearchService {
     }
 
     // 如果需要搜索插件（且插件功能已启用）
-    if ((sourceType === 'all' || sourceType === 'plugin') && AppConfig.AsyncPluginEnabled) {
+    if ((sourceType === 'all' || sourceType === 'plugin') && AppConfig.asyncPluginEnabled) {
       promises.push(this.searchPlugins(keyword, plugins, forceRefresh, concurrency, ext).then(results => {
         pluginResults = results;
       }).catch(err => {
@@ -531,9 +531,9 @@ export class SearchService {
     }
 
     const response: SearchResponse = {
-      Total: total,
-      Results: filteredForResults, // 使用进一步过滤的结果
-      MergedByType: mergedLinks,
+      total: total,
+      results: filteredForResults, // 使用进一步过滤的结果
+      mergedByType: mergedLinks,
     };
 
     // 根据resultType过滤返回结果
@@ -787,26 +787,26 @@ export class SearchService {
 function filterResponseByType(response: SearchResponse, resultType: string): SearchResponse {
   switch (resultType) {
     case 'merged_by_type':
-      // 只返回MergedByType，Results设为nil
+      // 只返回mergedByType，results设为nil
       return {
-        Total: response.Total,
-        MergedByType: response.MergedByType,
-        Results: null,
+        total: response.total,
+        mergedByType: response.mergedByType,
+        results: null,
       };
     case 'all':
       return response;
     case 'results':
-      // 只返回Results
+      // 只返回results
       return {
-        Total: response.Total,
-        Results: response.Results,
+        total: response.total,
+        results: response.results,
       };
     default:
-      // 默认返回MergedByType
+      // 默认返回mergedByType
       return {
-        Total: response.Total,
-        MergedByType: response.MergedByType,
-        Results: null,
+        total: response.total,
+        mergedByType: response.mergedByType,
+        results: null,
       };
   }
 }
@@ -822,8 +822,8 @@ function sortResultsByTimeAndKeywords(results: SearchResult[]): void {
     
     scores.push({
       Result: result,
-      TimeScore: calculateTimeScore(result.Datetime),
-      KeywordScore: getKeywordPriority(result.Title),
+      TimeScore: calculateTimeScore(result.datetime),
+      KeywordScore: getKeywordPriority(result.title),
       PluginScore: getPluginLevelScore(source),
       TotalScore: 0, // 稍后计算
     });
