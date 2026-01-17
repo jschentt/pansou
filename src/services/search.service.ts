@@ -360,6 +360,21 @@ export class SearchService {
     }
   }
 
+  // search 执行搜索（接受SearchRequest对象）
+  async search(request: any): Promise<SearchResponse> {
+    return this.Search(
+      request.keyword,
+      request.channels || [],
+      request.concurrency || 0,
+      request.forceRefresh || false,
+      request.resultType || 'all',
+      request.sourceType || 'all',
+      request.plugins || [],
+      request.cloudTypes || [],
+      request.ext || {}
+    );
+  }
+
   // Search 执行搜索
   async Search(keyword: string, channels: string[], concurrency: number, forceRefresh: boolean, resultType: string, sourceType: string, plugins: string[], cloudTypes: string[], ext: Record<string, any>): Promise<SearchResponse> {
     // 确保ext不为nil

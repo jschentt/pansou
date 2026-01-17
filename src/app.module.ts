@@ -10,7 +10,7 @@ import { CacheService } from './services/cache.service';
 @Module({
   imports: [SearchModule, AuthModule],
   controllers: [HealthController],
-  providers: [AuthService, CacheService, LoggerMiddleware],
+  providers: [AuthService, CacheService],
   exports: [CacheService],
 })
 export class AppModule implements NestModule {

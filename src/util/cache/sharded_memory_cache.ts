@@ -3,6 +3,12 @@ interface CleanupTarget {
   CleanExpired(): void;
 }
 
+// 内存缓存项结构（用于导出）
+export interface MemoryCacheItem {
+  Data: Buffer;
+  TTL: number;
+}
+
 // 分片内存缓存项
 class ShardedMemoryCacheItem {
   data: Buffer;
@@ -408,11 +414,7 @@ export class ShardedMemoryCache implements CleanupTarget {
     }
   }
 
-  // MemoryCacheItem 内存缓存项结构（用于导出）
-export interface MemoryCacheItem {
-  Data: Buffer;
-  TTL: number;
-}
+
 
   // GetAllItems 获取内存缓存中的所有项
   GetAllItems(): Record<string, MemoryCacheItem> {

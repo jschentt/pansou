@@ -45,7 +45,7 @@ async function bootstrap() {
   SwaggerModule.setup('api-docs', app, document);
 
   // 使用配置中的端口
-  const port = 3000;
+  const port = 8888;
   await app.listen(port);
   console.log(`Application is running on: http://localhost:${port}`);
   console.log(`Swagger documentation is available at: http://localhost:${port}/api-docs`);

@@ -5,8 +5,8 @@ import * as url from 'url';
 import * as cheerio from 'cheerio';
 
 // 预编译正则表达式
-const buildIdRegex = /"buildId":"([^"]+)"/;
-const nextDataRegex = /<script id="__NEXT_DATA__" type="application/json">(.*?)<\/script>/;
+const buildIdRegex = new RegExp('"buildId":"([^"]+)"');
+const nextDataRegex = new RegExp('<script id="__NEXT_DATA__" type="application\/json">(.*?)<\/script>');
 
 // 缓存相关变量
 const searchResultCache = new Map<string, CachedResponse>();

@@ -220,13 +220,12 @@ export class DelayedBatchWriteManager {
     const availableMemoryGB = DelayedBatchWriteManager.getAvailableMemoryGB();
     
     let interval: number;
-    switch {
-      case availableMemoryGB > 8: // 大内存系统
-        interval = 45000; // 45秒
-      case availableMemoryGB > 4: // 中等内存系统
-        interval = 60000; // 60秒
-      default: // 小内存系统
-        interval = 90000; // 90秒
+    if (availableMemoryGB > 8) { // 大内存系统
+      interval = 45000; // 45秒
+    } else if (availableMemoryGB > 4) { // 中等内存系统
+      interval = 60000; // 60秒
+    } else { // 小内存系统
+      interval = 90000; // 90秒
     }
     
     // 应用约束
@@ -247,13 +246,12 @@ export class DelayedBatchWriteManager {
     const availableMemoryGB = DelayedBatchWriteManager.getAvailableMemoryGB();
     
     let size: number;
-    switch {
-      case numCPU >= 8 && availableMemoryGB > 8: // 高性能系统
-        size = 200;
-      case numCPU >= 4 && availableMemoryGB > 4: // 中等性能系统
-        size = 100;
-      default: // 低性能系统
-        size = 50;
+    if (numCPU >= 8 && availableMemoryGB > 8) { // 高性能系统
+      size = 200;
+    } else if (numCPU >= 4 && availableMemoryGB > 4) { // 中等性能系统
+      size = 100;
+    } else { // 低性能系统
+      size = 50;
     }
     
     // 应用约束
@@ -273,13 +271,12 @@ export class DelayedBatchWriteManager {
     const availableMemoryGB = DelayedBatchWriteManager.getAvailableMemoryGB();
     
     let sizeMB: number;
-    switch {
-      case availableMemoryGB > 16: // 大内存系统
-        sizeMB = 20;
-      case availableMemoryGB > 8: // 中等内存系统
-        sizeMB = 10;
-      default: // 小内存系统
-        sizeMB = 5;
+    if (availableMemoryGB > 16) { // 大内存系统
+      sizeMB = 20;
+    } else if (availableMemoryGB > 8) { // 中等内存系统
+      sizeMB = 10;
+    } else { // 小内存系统
+      sizeMB = 5;
     }
     
     return sizeMB * 1024 * 1024; // 转换为字节
@@ -606,15 +603,17 @@ export class DelayedBatchWriteManager {
     
     try {
       // 第一步：强制刷新全局缓冲区（优先级最高）
-      if (err := await this.flushAllGlobalBuffers(); err) {
+      const err = await this.flushAllGlobalBuffers();
+      if (err) {
         console.warn(`[数据保护] 全局缓冲区刷新失败: ${err.message}`);
         lastErr = err;
       }
       
       // 第二步：刷新本地队列
-      if (err := await this.flushAllPendingData(); err) {
-        console.warn(`[数据保护] 本地队列刷新失败: ${err.message}`);
-        lastErr = err;
+      const err2 = await this.flushAllPendingData();
+      if (err2) {
+        console.warn(`[数据保护] 本地队列刷新失败: ${err2.message}`);
+        lastErr = err2;
       }
       
       // 第三步：关闭全局缓冲区管理器
@@ -641,7 +640,8 @@ export class DelayedBatchWriteManager {
       for (const bufferID in allBuffers) {
         const operations = allBuffers[bufferID];
         if (operations.length > 0) {
-          if (err := await this.batchWriteToDisk(operations); err) {
+          const err = await this.batchWriteToDisk(operations);
+          if (err) {
             console.warn(`[全局缓冲区] 缓冲区 ${bufferID} 刷新失败: ${err.message}`);
             lastErr = new Error(`刷新全局缓冲区 ${bufferID} 失败: ${err.message}`);
           }
@@ -660,7 +660,8 @@ export class DelayedBatchWriteManager {
     try {
       // 处理队列缓冲区中的数据
       if (this.queueBuffer.length > 0) {
-        if (err := await this.executeBatchWrite("程序关闭"); err) {
+        const err = await this.executeBatchWrite("程序关闭");
+        if (err) {
           return err;
         }
       }
@@ -783,7 +784,8 @@ export class DelayedBatchWriteManager {
     
     try {
       // 批量写入磁盘
-      if (err := await this.batchWriteToDisk(operations); err) {
+      const err = await this.batchWriteToDisk(operations);
+      if (err) {
         this.stats.FailedWrites++;
         return err;
       }
@@ -873,20 +875,18 @@ export class DelayedBatchWriteManager {
     
     // 调优批量间隔：基于系统负载动态调整
     const avgSystemLoad = stats.SystemLoadAverage;
-    switch {
-      case avgSystemLoad > 0.8: // 高负载：延长间隔，减少干扰
-        this.config.MaxBatchInterval = Math.min(this.config.MaxBatchInterval * 12 / 10, this.config.maxBatchInterval);
-      case avgSystemLoad < 0.3: // 低负载：缩短间隔，及时持久化
-        this.config.MaxBatchInterval = Math.max(this.config.MaxBatchInterval * 8 / 10, this.config.minBatchInterval);
+    if (avgSystemLoad > 0.8) { // 高负载：延长间隔，减少干扰
+      this.config.MaxBatchInterval = Math.min(this.config.MaxBatchInterval * 12 / 10, this.config.maxBatchInterval);
+    } else if (avgSystemLoad < 0.3) { // 低负载：缩短间隔，及时持久化
+      this.config.MaxBatchInterval = Math.max(this.config.MaxBatchInterval * 8 / 10, this.config.minBatchInterval);
     }
     
     // 调优批量大小：基于写入频率动态调整
     const queueSize = this.writeQueue.length;
-    switch {
-      case queueSize > 200: // 高频：增大批量，提高效率
-        this.config.MaxBatchSize = Math.min(this.config.MaxBatchSize * 12 / 10, this.config.maxBatchSize);
-      case queueSize < 50:  // 低频：减小批量，降低延迟
-        this.config.MaxBatchSize = Math.max(this.config.MaxBatchSize * 8 / 10, this.config.minBatchSize);
+    if (queueSize > 200) { // 高频：增大批量，提高效率
+      this.config.MaxBatchSize = Math.min(this.config.MaxBatchSize * 12 / 10, this.config.maxBatchSize);
+    } else if (queueSize < 50) { // 低频：减小批量，降低延迟
+      this.config.MaxBatchSize = Math.max(this.config.MaxBatchSize * 8 / 10, this.config.minBatchSize);
     }
   }
 
