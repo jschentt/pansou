@@ -1,19 +1,47 @@
-import { SearchResult, Link, PluginSearchResult } from '../../models/plugin-result';
-import { BaseAsyncPlugin } from '../plugin.manager';
-import axios, { AxiosInstance, AxiosResponse } from 'axios';
+import { BaseAsyncPlugin, registerGlobalPlugin } from '../plugin.manager';
+import { SearchResult, Link } from '../../models/response';
+import axios, { AxiosInstance, AxiosRequestConfig } from 'axios';
 import * as cheerio from 'cheerio';
+import * as crypto from 'crypto';
+import * as url from 'url';
 
-const baseURL = 'https://www.zxzjhd.com';
-const searchPath = '/vodsearch/-------------.html';
+const baseURL = "https://www.zxzjhd.com";
+const searchPath = "/vodsearch/-------------.html";
 const maxResults = 10;
 const maxConcurrent = 5;
 
+// 搜索结果项接口
+interface SearchItem {
+  ID: string;
+  Title: string;
+  DetailURL: string;
+}
+
+// 播放链接项接口
+interface PlayLink {
+  URL: string;
+  Label: string;
+  LineType: string;
+}
+
+// 播放器数据接口
+interface PlayerData {
+  url: string;
+  from: string;
+}
+
+// ZXZJPlugin 插件结构
 class ZXZJPlugin extends BaseAsyncPlugin {
-  private client: AxiosInstance;
+  private optimizedClient: AxiosInstance;
 
   constructor() {
-    super('zxzj', 3);
-    this.client = axios.create({
+    super("zxzj", 3); // 普通质量插件，优先级3
+    this.optimizedClient = this.createOptimizedHTTPClient();
+  }
+
+  // 创建优化的HTTP客户端
+  private createOptimizedHTTPClient(): AxiosInstance {
+    return axios.create({
       timeout: 30000,
       headers: {
         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
@@ -24,43 +52,43 @@ class ZXZJPlugin extends BaseAsyncPlugin {
     });
   }
 
-  public async Search(keyword: string, ext: Record<string, any>): Promise<SearchResult[]> {
-    const result = await this.SearchWithResult(keyword, ext);
-    return result.Results;
-  }
-
-  public async SearchWithResult(keyword: string, ext: Record<string, any>): Promise<PluginSearchResult> {
-    return this.AsyncSearchWithResult(keyword, this.searchImpl.bind(this), this.MainCacheKey, ext);
-  }
-
+  // 搜索实现
   private async searchImpl(client: AxiosInstance, keyword: string, ext: Record<string, any>): Promise<SearchResult[]> {
     const searchURL = `${baseURL}${searchPath}?wd=${encodeURIComponent(keyword)}&submit=`;
     
-    const items = await this.fetchSearchResults(searchURL);
+    const items = await this.fetchSearchResults(client, searchURL);
     
     if (items.length === 0) {
       return [];
     }
     
     if (items.length > maxResults) {
-      items.splice(maxResults);
+      items = items.slice(0, maxResults);
     }
     
-    const results = await this.processDetailPages(items);
+    const results = await this.processDetailPages(client, items);
     
-    return this.FilterResultsByKeyword(results, keyword);
+    // 关键词过滤
+    return results.filter(result => 
+      result.title.toLowerCase().includes(keyword.toLowerCase()) ||
+      result.content.toLowerCase().includes(keyword.toLowerCase())
+    );
   }
 
-  private async fetchSearchResults(searchURL: string): Promise<SearchItem[]> {
+  // 获取搜索结果
+  private async fetchSearchResults(client: AxiosInstance, searchURL: string): Promise<SearchItem[]> {
     try {
-      const resp = await this.doRequestWithRetry(this.client, searchURL, baseURL);
+      const resp = await client.get(searchURL);
+      if (resp.status !== 200) {
+        throw new Error(`请求返回状态码: ${resp.status}`);
+      }
       
       const $ = cheerio.load(resp.data);
       const items: SearchItem[] = [];
       
       $('ul.stui-vodlist li').each((i, s) => {
         const link = $(s).find('.stui-vodlist__detail h4.title a');
-        const href = link.attr('href');
+        const href = link.attr('href') || '';
         if (!href) {
           return;
         }
@@ -85,34 +113,38 @@ class ZXZJPlugin extends BaseAsyncPlugin {
       
       return items;
     } catch (error) {
-      console.error(`[zxzj] 获取搜索结果失败: ${(error as Error).message}`);
+      console.error(`[ZXZJ] 搜索请求失败: ${error}`);
       return [];
     }
   }
 
-  private async processDetailPages(items: SearchItem[]): Promise<SearchResult[]> {
+  // 处理详情页
+  private async processDetailPages(client: AxiosInstance, items: SearchItem[]): Promise<SearchResult[]> {
     const results: SearchResult[] = [];
     const semaphore = new Semaphore(maxConcurrent);
     
     const promises = items.map(async (item) => {
       await semaphore.acquire();
       try {
-        const result = await this.processDetailPage(item);
-        if (result) {
-          results.push(result);
-        }
+        return await this.processDetailPage(client, item);
       } finally {
         semaphore.release();
       }
     });
     
-    await Promise.all(promises);
-    return results;
+    const processedResults = await Promise.all(promises);
+    
+    // 过滤掉null结果
+    return processedResults.filter(result => result !== null) as SearchResult[];
   }
 
-  private async processDetailPage(item: SearchItem): Promise<SearchResult | null> {
+  // 处理单个详情页
+  private async processDetailPage(client: AxiosInstance, item: SearchItem): Promise<SearchResult | null> {
     try {
-      const resp = await this.doRequestWithRetry(this.client, item.DetailURL, baseURL);
+      const resp = await client.get(item.DetailURL);
+      if (resp.status !== 200) {
+        return null;
+      }
       
       const $ = cheerio.load(resp.data);
       
@@ -147,25 +179,29 @@ class ZXZJPlugin extends BaseAsyncPlugin {
         return null;
       }
       
-      const links = await this.fetchPanLinks(playLinks);
+      const links = await this.fetchPanLinks(client, playLinks);
       if (links.length === 0) {
         return null;
       }
       
-      return {
-        UniqueID: `${this.Name()}-${item.ID}`,
-        Title: title,
-        Content: description,
-        Links: links,
-        Channel: '',
-        Datetime: updateTime,
-      };
+      const result = new SearchResult();
+      result.uniqueID = `${this.pluginName}-${item.ID}`;
+      result.title = title;
+      result.content = description;
+      result.links = links;
+      result.channel = '';
+      result.datetime = updateTime;
+      result.images = [];
+      result.tags = [];
+      
+      return result;
     } catch (error) {
-      console.error(`[zxzj] 处理详情页失败: ${(error as Error).message}`);
+      console.error(`[ZXZJ] 处理详情页失败: ${error}`);
       return null;
     }
   }
 
+  // 提取播放链接
   private extractPlayLinks($: cheerio.Root): PlayLink[] {
     const links: PlayLink[] = [];
     
@@ -190,7 +226,7 @@ class ZXZJPlugin extends BaseAsyncPlugin {
       }
       
       playlist.find('li a').each((j, a) => {
-        const href = $(a).attr('href');
+        const href = $(a).attr('href') || '';
         if (!href) {
           return;
         }
@@ -207,6 +243,7 @@ class ZXZJPlugin extends BaseAsyncPlugin {
     return links;
   }
 
+  // 检测网盘类型
   private detectPanType(title: string): string {
     const lower = title.toLowerCase();
     
@@ -223,86 +260,98 @@ class ZXZJPlugin extends BaseAsyncPlugin {
     return '';
   }
 
-  private async fetchPanLinks(playLinks: PlayLink[]): Promise<Link[]> {
+  // 获取网盘链接
+  private async fetchPanLinks(client: AxiosInstance, playLinks: PlayLink[]): Promise<Link[]> {
     const links: Link[] = [];
     const semaphore = new Semaphore(maxConcurrent);
     
     const promises = playLinks.map(async (pl) => {
       await semaphore.acquire();
       try {
-        const link = await this.fetchSinglePanLink(pl);
-        if (link) {
-          links.push(link);
-        }
+        return await this.fetchSinglePanLink(client, pl);
       } finally {
         semaphore.release();
       }
     });
     
-    await Promise.all(promises);
-    return links;
+    const processedLinks = await Promise.all(promises);
+    
+    // 过滤掉null结果并合并
+    return processedLinks.filter(link => link !== null) as Link[];
   }
 
-  private async fetchSinglePanLink(pl: PlayLink): Promise<Link | null> {
+  // 获取单个网盘链接
+  private async fetchSinglePanLink(client: AxiosInstance, pl: PlayLink): Promise<Link | null> {
     try {
-      const resp = await this.doRequestWithRetry(this.client, pl.URL, baseURL);
+      const resp = await client.get(pl.URL);
+      if (resp.status !== 200) {
+        return null;
+      }
       
-      const body = resp.data;
-      const [panURL, password] = this.parsePlayerData(body);
-      
+      const panURL = await this.parsePlayerData(resp.data);
       if (!panURL) {
         return null;
       }
       
-      const cloudType = this.determinePanType(panURL, pl.LineType);
+      const password = this.extractPassword(panURL.url);
+      const cloudType = this.determinePanType(panURL.url, pl.LineType);
+      
       if (!cloudType) {
         return null;
       }
       
-      return {
-        Type: cloudType,
-        URL: panURL,
-        Password: password,
-      };
+      const link = new Link();
+      link.type = cloudType;
+      link.url = panURL.url;
+      link.password = password;
+      
+      return link;
     } catch (error) {
-      console.error(`[zxzj] 获取网盘链接失败: ${(error as Error).message}`);
+      console.error(`[ZXZJ] 获取网盘链接失败: ${error}`);
       return null;
     }
   }
 
-  private parsePlayerData(body: string): [string, string] {
+  // 解析播放器数据
+  private parsePlayerData(body: string): { url: string; from: string } | null {
     const re = /var\s+player_aaaa\s*=\s*(\{[^;]+\})/;
     const matches = re.exec(body);
     if (!matches || matches.length < 2) {
-      return ['', ''];
+      return null;
     }
     
     try {
-      const data = JSON.parse(matches[1]);
-      const panURL = data.url ? data.url.trim() : '';
+      // 解析JSON数据
+      const playerData: PlayerData = JSON.parse(matches[1]);
       
+      let panURL = playerData.url.trim();
       if (!panURL) {
-        return ['', ''];
+        return null;
       }
       
-      const normalizedURL = panURL.replace(/\\\//g, '/');
-      const password = this.extractPassword(normalizedURL);
+      // 处理转义字符
+      panURL = panURL.replace(/\\\//g, '/');
       
-      return [normalizedURL, password];
-    } catch {
-      return ['', ''];
+      return {
+        url: panURL,
+        from: playerData.from,
+      };
+    } catch (error) {
+      console.error(`[ZXZJ] 解析播放器数据失败: ${error}`);
+      return null;
     }
   }
 
+  // 提取密码
   private extractPassword(panURL: string): string {
     try {
-      const urlObj = new URL(panURL);
-      const pwd = urlObj.searchParams.get('pwd');
+      const parsed = new url.URL(panURL);
+      const pwd = parsed.searchParams.get('pwd');
       if (pwd && pwd.length === 4) {
         return pwd;
       }
-    } catch {
-      // 忽略 URL 解析错误
+    } catch (error) {
+      // URL解析失败，继续使用其他方法
     }
     
     if (panURL.includes('|')) {
@@ -324,6 +373,7 @@ class ZXZJPlugin extends BaseAsyncPlugin {
     return '';
   }
 
+  // 确定网盘类型
   private determinePanType(panURL: string, lineType: string): string {
     const lower = panURL.toLowerCase();
     
@@ -347,6 +397,7 @@ class ZXZJPlugin extends BaseAsyncPlugin {
     return '';
   }
 
+  // 构建绝对URL
   private buildAbsURL(path: string): string {
     if (path.startsWith('http://') || path.startsWith('https://')) {
       return path;
@@ -360,6 +411,7 @@ class ZXZJPlugin extends BaseAsyncPlugin {
     return baseURL + path;
   }
 
+  // 解析更新时间
   private parseUpdateTime(text: string): Date {
     const updateRegex = /更新[：:]\s*(\d{4}-\d{2}-\d{2}\s+\d{2}:\d{2}:\d{2}|\d{4}-\d{2}-\d{2})/;
     const matches = updateRegex.exec(text);
@@ -370,106 +422,67 @@ class ZXZJPlugin extends BaseAsyncPlugin {
     const timeStr = matches[1].trim();
     
     const layouts = [
-      'YYYY-MM-DD HH:mm:ss',
-      'YYYY-MM-DD',
+      '2006-01-02 15:04:05',
+      '2006-01-02',
     ];
     
     for (const layout of layouts) {
-      const date = this.parseDate(timeStr, layout);
-      if (date.getTime() > 0) {
-        return date;
+      const t = new Date(timeStr);
+      if (!isNaN(t.getTime())) {
+        return t;
       }
     }
     
     return new Date(0);
   }
 
-  private parseDate(dateString: string, format: string): Date {
-    if (format === 'YYYY-MM-DD') {
-      const [year, month, day] = dateString.split('-').map(Number);
-      return new Date(year, month - 1, day);
-    } else if (format === 'YYYY-MM-DD HH:mm:ss') {
-      const [datePart, timePart] = dateString.split(' ');
-      const [year, month, day] = datePart.split('-').map(Number);
-      const [hour, minute, second] = timePart.split(':').map(Number);
-      return new Date(year, month - 1, day, hour, minute, second);
-    }
-    return new Date(0);
-  }
-
-  private async doRequestWithRetry(client: AxiosInstance, url: string, referer: string): Promise<AxiosResponse> {
-    const maxRetries = 3;
-    let lastError: Error | null = null;
-    
-    for (let i = 0; i < maxRetries; i++) {
-      if (i > 0) {
-        const backoff = Math.pow(2, i - 1) * 200;
-        await new Promise(resolve => setTimeout(resolve, backoff));
-      }
-      
-      try {
-        const resp = await client.get(url, {
-          headers: {
-            'Referer': referer,
-          },
-        });
-        
-        if (resp.status === 200) {
-          return resp;
-        }
-      } catch (error) {
-        lastError = error as Error;
-      }
-    }
-    
-    throw new Error(`重试 ${maxRetries} 次后仍然失败: ${lastError?.message}`);
+  // 设置请求头
+  private setHeaders(config: AxiosRequestConfig, referer: string): void {
+    config.headers = {
+      ...config.headers,
+      'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
+      'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
+      'Accept-Language': 'zh-CN,zh;q=0.9,en;q=0.8',
+      'Connection': 'keep-alive',
+      'Referer': referer,
+    };
   }
 }
 
-interface SearchItem {
-  ID: string;
-  Title: string;
-  DetailURL: string;
-}
-
-interface PlayLink {
-  URL: string;
-  Label: string;
-  LineType: string;
-}
-
-// 信号量实现，用于限制并发数
+// 信号量实现，用于限制并发
 class Semaphore {
-  private maxConcurrency: number;
-  private current: number;
-  private queue: (() => void)[];
+  private count: number;
+  private queue: (() => void)[] = [];
 
-  constructor(maxConcurrency: number) {
-    this.maxConcurrency = maxConcurrency;
-    this.current = 0;
-    this.queue = [];
+  constructor(count: number) {
+    this.count = count;
   }
 
   async acquire(): Promise<void> {
-    if (this.current < this.maxConcurrency) {
-      this.current++;
-      return;
+    if (this.count > 0) {
+      this.count--;
+    } else {
+      await new Promise<void>((resolve) => {
+        this.queue.push(resolve);
+      });
     }
-
-    return new Promise<void>((resolve) => {
-      this.queue.push(resolve);
-    });
   }
 
   release(): void {
     if (this.queue.length > 0) {
-      const resolve = this.queue.shift()!;
-      resolve();
+      const resolve = this.queue.shift();
+      if (resolve) {
+        resolve();
+      }
     } else {
-      this.current--;
+      this.count++;
     }
   }
 }
 
-// 注册插件
-BaseAsyncPlugin.RegisterGlobalPlugin(new ZXZJPlugin());
+// 创建并注册插件
+const zxzjPlugin = new ZXZJPlugin();
+registerGlobalPlugin(zxzjPlugin);
+
+export type { ZXZJPlugin };
+export const ZXZJPluginInstance = zxzjPlugin;
