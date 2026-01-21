@@ -1,0 +1,4 @@
+[build]
+bin = "./tmp/main"          # 统一输出路径
+cmd = "go build -gcflags='all=-N -l' -o ./tmp/main ."  # 带调试符号
+delay = 1000                # 保存后 1s 再编译，可按需调
