@@ -5,10 +5,10 @@
       "name": "调试服务器",
       "type": "go",
       "request": "launch",
-      "mode": "debug",
-      "program": "${workspaceFolder}/main.go",
+      "mode": "exec", // 关键：执行已有二进制
+      "program": "${workspaceFolder}/tmp/main", // 指向 air 产物
+      "env": { "PORT": "9999" }, // 换端口，避免 bind 冲突
       "envFile": "${workspaceFolder}/.env",
-      "args": [],
       "showLog": true,
       "trace": "log",
       "logOutput": "debugger"

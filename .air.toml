@@ -1,4 +1,12 @@
 [build]
-bin = "./tmp/main"          # 统一输出路径
-cmd = "go build -gcflags='all=-N -l' -o ./tmp/main ."  # 带调试符号
-delay = 1000                # 保存后 1s 再编译，可按需调
+  bin = "./tmp/main"
+  cmd = "go build -gcflags='all=-N -l' -o ./tmp/main ."
+  delay = 1000
+  env_file = ".env"
+
+[watch]
+  extensions = ["go", "mod", "sum"]
+  exclude_dirs = ["tmp", "vendor", ".git"]
+
+[misc]
+  clean_on_exit = true
